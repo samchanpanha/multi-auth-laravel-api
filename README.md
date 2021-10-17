@@ -64,12 +64,12 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
 
 How to setup Multi-Auth for Laravel APIs
-STEP 1
+## STEP 1
 Add passport to your Laravel 8+ project
-composer require laravel/passport 
+## composer require laravel/passport 
 Lower versions can install with the following if you have composer dependency issues while trying to install
-composer require laravel/passport "~9.0"
-STEP 2
+## composer require laravel/passport "~9.0"
+## STEP 2
 Go to “app/Providers/AuthServiceProvider” add the passport routes function and then define your roles and descriptions for each role and then specify the default role that would be attached if a role is not explicitly requested for.
 <?php	
 	public function boot()
@@ -89,14 +89,17 @@ Go to “app/Providers/AuthServiceProvider” add the passport routes function a
 	
 	
 	}
-STEP 3
-Go to “config/auth.php”
+?>
+## STEP 3
+## Go to “config/auth.php”
 In the “defaults” section. Set the guard to default scope name you passed earlier
+<?php 
 'defaults' => [
     'guard' => 'customer',
     'passwords' => 'users',
 ],
-STEP 4
+?>
+## STEP 4
 In the “guards” section. You would see web and API, you should add the other roles and for the “driver” you set it to passport and then the provider should be the name of the provider which would be configured in the next step. It makes sense to set the provider name to be the same name as the role as in the example below
 
 <?php	
@@ -123,8 +126,10 @@ In the “guards” section. You would see web and API, you should add the other
 	],
 	
 	],
-STEP 5
+?>
+## STEP 5
 In the providers' section, add a provider for each role as well. This the driver should be eloquent and the model should be the model of the tables you want each role to authenticate from.
+
 <?php	
 	'providers' => [
 	'customer' => [
@@ -137,7 +142,9 @@ In the providers' section, add a provider for each role as well. This the driver
 	'model' => App\staff::class,
 	],
 	],
+?>
 For each of the models to be used, extend “Authenticatable” and then use the traits “HasApiTokens” and “Notifiable”.
+
 <?php	
 	
 	namespace App;
@@ -155,11 +162,15 @@ For each of the models to be used, extend “Authenticatable” and then use the
 	
 	
 	}
-STEP 6
+?>
+## STEP 6
 Create a middleware
+
 php artisan make:middleware checkForAllScopes
-STEP 7
+
+## STEP 7
 Add the code below. It checks that the authenticated user is allowed to make the request else it fails
+
 <?php	
 	
 	namespace App\Http\Middleware;
@@ -182,7 +193,7 @@ Add the code below. It checks that the authenticated user is allowed to make the
 	*/
 	public function handle($request, $next, ...$scopes)
 	{
-	if (! $request->user() || ! $request->user()->token()) {
+	    if(! $request->user() || ! $request->user()->token()) {
 	throw new AuthenticationException;
 	}
 	
@@ -196,16 +207,20 @@ Add the code below. It checks that the authenticated user is allowed to make the
 	
 	}
 	}
-STEP 8
+?>
+## STEP 8
 Go to “app/Http/Kernel.php” add the new scope to the routed middleware section
+
 <?php	
 	protected $routeMiddleware = [
 	'auth' => \App\Http\Middleware\Authenticate::class,
 	...
 	'scopes' => CheckForAllScopes::class,
 	];
-STEP 9
+?>
+## STEP 9
 Go to “routes/api.php” then put the auth middleware with the right guard for the role
+
 <?php	
 	Route::group(['prefix' => 'v1'],function(){
 	
@@ -234,8 +249,10 @@ Go to “routes/api.php” then put the auth middleware with the right guard for
 	});
 	
 	});
-STEP 10
+?>
+## STEP 10
 In your controller, you can retrieve a reference to the object by calling the request’s user. It would return an instance of the table that you used in authenticating.
+
 <?php	
 	public function dashboard(Request $request) {
 	$customer = $request->user();
@@ -243,8 +260,8 @@ In your controller, you can retrieve a reference to the object by calling the re
 	// be available now
 	
 	}
-
-STEP 11
+?>
+## STEP 11
 When generating tokens pass the role as the scope to passport’s “CreateToken” method as in the example below
 <?php	
 	public function signIn(Request $request)
@@ -278,6 +295,7 @@ When generating tokens pass the role as the scope to passport’s “CreateToken
 	} else {
 	return response( array( "message" => "Wrong Credentials." ), 400 );
 	}
+?>
 All done!
 Now you can authenticate with various tables for different roles.
 
