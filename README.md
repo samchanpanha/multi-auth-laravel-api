@@ -62,3 +62,223 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+How to setup Multi-Auth for Laravel APIs
+STEP 1
+Add passport to your Laravel 8+ project
+composer require laravel/passport 
+Lower versions can install with the following if you have composer dependency issues while trying to install
+composer require laravel/passport "~9.0"
+STEP 2
+Go to “app/Providers/AuthServiceProvider” add the passport routes function and then define your roles and descriptions for each role and then specify the default role that would be attached if a role is not explicitly requested for.
+<?php	
+	public function boot()
+	{
+	$this->registerPolicies();
+	
+	Passport::routes();
+	Passport::tokensCan([
+	'staff' => 'Access Admin Backend',
+	'customer' => 'Access Customer App',
+	'role' => 'Description for role',
+	]);
+	
+	Passport::setDefaultScope([
+	'customer',
+	]);
+	
+	
+	}
+STEP 3
+Go to “config/auth.php”
+In the “defaults” section. Set the guard to default scope name you passed earlier
+'defaults' => [
+    'guard' => 'customer',
+    'passwords' => 'users',
+],
+STEP 4
+In the “guards” section. You would see web and API, you should add the other roles and for the “driver” you set it to passport and then the provider should be the name of the provider which would be configured in the next step. It makes sense to set the provider name to be the same name as the role as in the example below
+
+<?php	
+	'guards' => [
+	'web' => [
+	'driver' => 'session',
+	'provider' => 'users',
+	],
+	
+	'api' => [
+	'driver' => 'passport',
+	'provider' => 'users',
+	'hash' => false,
+	],
+	
+	'staff' => [
+	'driver' => 'passport',
+	'provider' => 'staff',
+	],
+	
+	'customer' => [
+	'driver' => 'passport',
+	'provider' => 'customer',
+	],
+	
+	],
+STEP 5
+In the providers' section, add a provider for each role as well. This the driver should be eloquent and the model should be the model of the tables you want each role to authenticate from.
+<?php	
+	'providers' => [
+	'customer' => [
+	'driver' => 'eloquent',
+	'model' => App\customer::class,
+	],
+	
+	'staff' => [
+	'driver' => 'eloquent',
+	'model' => App\staff::class,
+	],
+	],
+For each of the models to be used, extend “Authenticatable” and then use the traits “HasApiTokens” and “Notifiable”.
+<?php	
+	
+	namespace App;
+	
+	use Illuminate\Database\Eloquent\Model;
+	use Illuminate\Foundation\Auth\User as Authenticatable;
+	use Illuminate\Notifications\Notifiable;
+	use Illuminate\Support\Carbon;
+	use Illuminate\Support\Facades\Storage;
+	use Laravel\Passport\HasApiTokens;
+	
+	class customer extends Authenticatable
+	{
+	use HasApiTokens, Notifiable;
+	
+	
+	}
+STEP 6
+Create a middleware
+php artisan make:middleware checkForAllScopes
+STEP 7
+Add the code below. It checks that the authenticated user is allowed to make the request else it fails
+<?php	
+	
+	namespace App\Http\Middleware;
+	
+	use Closure;
+	use Illuminate\Auth\AuthenticationException;
+	
+	
+	class CheckForAllScopes
+	{
+	/**
+	* Handle the incoming request.
+	*
+	* @param  \Illuminate\Http\Request  $request
+	* @param  \Closure  $next
+	* @param  mixed  ...$scopes
+	* @return \Illuminate\Http\Response
+	*
+	* @throws \Illuminate\Auth\AuthenticationException|\Laravel\Passport\Exceptions\MissingScopeException
+	*/
+	public function handle($request, $next, ...$scopes)
+	{
+	if (! $request->user() || ! $request->user()->token()) {
+	throw new AuthenticationException;
+	}
+	
+	foreach ($scopes as $scope) {
+	if ($request->user()->tokenCan($scope)) {
+	return $next($request);
+	}
+	}
+	
+	return response( array( "message" => "Not Authorized." ), 403 );
+	
+	}
+	}
+STEP 8
+Go to “app/Http/Kernel.php” add the new scope to the routed middleware section
+<?php	
+	protected $routeMiddleware = [
+	'auth' => \App\Http\Middleware\Authenticate::class,
+	...
+	'scopes' => CheckForAllScopes::class,
+	];
+STEP 9
+Go to “routes/api.php” then put the auth middleware with the right guard for the role
+<?php	
+	Route::group(['prefix' => 'v1'],function(){
+	
+	//general unauthenticated routes here
+	
+	Route::group(['prefix' => 'customer'],function(){
+	
+	Route::post('sign-up','CustomerController@signUp');
+	//unauthenticated routes for customers here
+	
+	Route::group( ['middleware' => ['auth:customer','scope:customer'] ],function(){
+	// authenticated customer routes here
+	Route::post('dashboard','CustomerController@dashboard');
+	});
+	});
+	
+	Route::group(['prefix' => 'staff'],function(){
+	
+	Route::post('sign-up','StaffController@signUp');
+	//unauthenticated routes for customers here
+	
+	Route::group( ['middleware' => ['auth:staff','scope:staff'] ],function(){
+	// authenticated staff routes here
+	Route::post('dashboard','StaffController@dashboard');
+	});
+	});
+	
+	});
+STEP 10
+In your controller, you can retrieve a reference to the object by calling the request’s user. It would return an instance of the table that you used in authenticating.
+<?php	
+	public function dashboard(Request $request) {
+	$customer = $request->user();
+	// the full object of the customer as containted in the able would
+	// be available now
+	
+	}
+
+STEP 11
+When generating tokens pass the role as the scope to passport’s “CreateToken” method as in the example below
+<?php	
+	public function signIn(Request $request)
+	{
+	$email = $request->input('email');
+	$password = $request->input('password');
+	
+	$rules = [
+	'email' => 'required|email:rfc,dns|max:255',
+	'password' => ['required'],
+	];
+	
+	$validator = Validator::make($request->all(), $rules,$this->validationMessages());
+	
+	if ($validator->fails()) {return  response()->json(["message" => $validator->errors()->first()],400);}
+	
+	if(customer::where('email',$email)->count() <= 0 ) return response( array( "message" => "Email number does not exist"  ), 400 );
+	
+	$customer = customer::where('email',$email)->first();
+	
+	if(password_verify($password,$customer->password)){
+	$customer->last_login = Carbon::now();
+	$customer->save();
+	return response( array( "message" => "Sign In Successful", "data" => [
+	"customer" => $customer,
+	
+	// Below the customer key passed as the second parameter sets the role
+	// anyone with the auth token would have only customer access rights
+	"token" => $customer->createToken('Personal Access Token',['customer'])->accessToken
+	]  ), 200 );
+	} else {
+	return response( array( "message" => "Wrong Credentials." ), 400 );
+	}
+All done!
+Now you can authenticate with various tables for different roles.
+
+
